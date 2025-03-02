@@ -4,7 +4,7 @@ This is a barebone implementation of a plugin architecture using modern C++. The
 - Cross-platform
 - Safe memory management by using smart pointers instead of raw ones
 
-This project serves as a supporting reference material for the article [How Plugin Architecture works?](https://megacephalo.github.io/posts/area-software-design/how_to_reate_a_memory_safe_cross_platform_plugin/)
+This project serves as a supporting reference material for the article [How to reate a memory safe cross platform plugin with C++](https://megacephalo.github.io/posts/area-software-design/how_to_reate_a_memory_safe_cross_platform_plugin/)
 
 # How to install?
 
