@@ -1,14 +1,15 @@
-
 #include <iostream>
 #include <filesystem>
 #include <yaml-cpp/yaml.h>
 #include <string>
-#include <dlfcn.h>
-#include "plugin_core.h"
+#include <ltdl.h>
+#include <memory>
 
 #include "animal.h"
 
-Animal::Ptr load_animal(const std::string& animalLib, DLibHandle& pluginHandle);
+namespace fs = std::filesystem;
+
+Animal::Ptr load_animal(std::string animalLib, lt_dlhandle& pluginHandle);
 
 
 std::string print_usage(const std::string& program_name) {
@@ -41,37 +42,58 @@ int main(int argc, char** argv) {
     YAML::Node config = YAML::LoadFile(config_file.string());
     
     std::string animalLib = config["animal_library"].as<std::string>();
-    DLibHandle pluginHandle = nullptr;
-    Animal::Ptr animal = load_animal(animalLib, pluginHandle);
 
-    if (animal == nullptr) {
-        std::cerr << "Failed to load animal" << std::endl;
+    /* initializing ltdl */
+    if (lt_dlinit() != 0) {
+        std::cerr << " Error initializing libltdl: " << lt_dlerror() << std::endl;
         return EXIT_FAILURE;
     }
 
-    std::cout << "Animal loaded: " << animal->name() << "  ";
+    lt_dlhandle pluginHandle = nullptr;
+    Animal::Ptr animal = load_animal(animalLib, pluginHandle);
+
+    std::cout << "Animal loaded: " << animal->name() << " makes the sound: ";
     animal->make_sound();
+    
     std::cout << std::endl;
+
+    animal.reset();
+    if (pluginHandle != nullptr)  lt_dlclose(pluginHandle);
+    lt_dlexit();
 
     return EXIT_SUCCESS;
 }
 
-Animal::Ptr load_animal(const std::string& animalLib, DLibHandle& pluginHandle) {
-    pluginHandle = DLibHandle(dlopen(animalLib.c_str(), RTLD_NOW));
+Animal::Ptr load_animal(std::string animalLib, lt_dlhandle& pluginHandle) {
+    if (not fs::exists(fs::path(animalLib)) ) {
+        std::cerr << "The provided library: " << animalLib << " NOT found." << std::endl;
+        return nullptr;
+    }
+    animalLib = fs::canonical(animalLib).string();
+    std::cout << "Loading in plugin from " << animalLib << std::endl;
+
+    pluginHandle = lt_dlopenext(animalLib.c_str());
     if (pluginHandle == nullptr) {
-        std::cerr << "Failed to open library: " << dlerror() << std::endl;
+        std::cerr << "Error loading plugin: " << lt_dlerror() << std::endl;
         return nullptr;
     }
 
-    typedef Animal::Ptr (*create_animal_t)();
-    create_animal_t create_animal = nullptr;
-    create_animal = reinterpret_cast<create_animal_t>(dlsym(pluginHandle.get(), "create_animal"));
+    // Create the plugin function
+    void* sym = lt_dlsym(pluginHandle, "create_animal");
+    if (sym == nullptr) {
+        std::cerr << "Error loading symbol: " << lt_dlerror() << std::endl;
+        lt_dlclose(pluginHandle);
+        return nullptr;
+    }
 
+    // Cast to function pointer type
+    using CreateAnimal_t = Animal::Ptr (*)();
+    auto create_animal = reinterpret_cast<CreateAnimal_t>(sym);
     if (create_animal == nullptr) {
-        std::cerr << "Failed to find create_animal symbol" << std::endl;
+        std::cerr << "Error loading symbol: " << lt_dlerror() << std::endl;
+        lt_dlclose(pluginHandle);
         return nullptr;
     }
 
     return create_animal();
-    
 }
